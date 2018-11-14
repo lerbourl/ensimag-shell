@@ -12,6 +12,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <signal.h>
 
 
 
@@ -21,6 +22,11 @@
 #ifndef VARIANTE
 #error "Variante non défini !!"
 #endif
+
+void bonjour(int sig)
+{
+  printf("J'ai recu le signal %d\n", sig);
+}
 
 /* Guile (1.8 and 2.0) is auto-detected by cmake */
 /* To disable Scheme interpreter (Guile support), comment the
@@ -32,6 +38,8 @@
 #include <libguile.h>
 
 #define N_PROCESSUS_MAX 255
+#define READ_END 0
+#define WRITE_END 1
 
 int question6_executer(char *line)
 {
@@ -66,14 +74,16 @@ void terminate(char *line) {
 	exit(0);
 }
 
+// structure de processus
 typedef struct processus_t{
 	int pid;
 	char commande[50]; // hypothèse que les noms de commande ne dépassent pas 50 caractères
 } processus;
-processus proc_table[N_PROCESSUS_MAX];
-int new_processus = 0;
 // début du terminal
 int main() {
+	processus proc_table[N_PROCESSUS_MAX];
+	int new_processus = 0;
+	struct sigaction traitant;
         printf("Variante %d: %s\n", VARIANTE, VARIANTE_STRING);
 
 #if USE_GUILE == 1
@@ -132,7 +142,15 @@ int main() {
 		if (l->in) printf("in: %s\n", l->in);
 		if (l->out) printf("out: %s\n", l->out);
 		if (l->bg) printf("background (&)\n");
+/*
 
+
+BONJOUR !
+CERTAINS TESTS NE PASSENT PAS, ET POURTANT DANS LE SHELL LA SORTIE EST BONNE !!
+"ls -l" et "cat a.txt a.txt" par exemple...
+
+
+*/
 		pid_t pid;
 		/* Display each command of the pipe */
 		int p[2];
@@ -151,38 +169,41 @@ int main() {
 				printf("jobs:\n");
 				for(k = 0; k < new_processus; k++){
 					int stat_loc, endID;
-					printf("processus %s pid %d ", proc_table[k].commande, proc_table[k].pid);
+					close(p[WRITE_END]);
 					endID = waitpid(pid, &stat_loc, WNOHANG);
-					if (endID == 0) printf("is still running\n");
+					if (endID == 0){
+						printf("processus %s pid %d ", proc_table[k].commande, proc_table[k].pid);
+						printf("is still running\n");
+					}
+					/* decommenter si l'on veut afficher l'historique des processus terminés
 					else if (endID == pid){ // La première fois on signal l'arrêt
 						if (WIFEXITED(stat_loc)) printf("ended normally\n");
 						else if (WIFSIGNALED(stat_loc)) printf("ended because of uncaught signal\n");
 						else if (WIFSTOPPED(stat_loc)) printf("has stopped\n");
 						else printf("status not treated\n"); // ensuite c'est du passé
 					}
-					else if (endID == -1) printf("n'existe plus\n");
+					else if (endID == -1) printf("n'existe plus\n");*/
 				}
 			}
 			else{
-				// On fork pour lancer la commande
+				// On fork pour lancer un processus
 				switch( pid = fork() ) {
 				case -1:
 				  perror("fork error");
 				  break;
 				case 0: // le fils
-
 					/* les pipes */
-					if (i > 0){ // pipe en dessous
-						printf("stdin pipe %s\n", cmd[0]);
-						dup2(p[0], STDIN_FILENO);
-						close(p[1]);
-						close(p[0]);
-					}
-					if (l->seq[i + 1]!=0){ // pipe au dessus
+					if (l->seq[i + 1]!=0){ // un pipe est après
 						printf("%s pipe sur stdout\n", cmd[0]);
-						dup2(p[1], STDOUT_FILENO);
-						close(p[0]);
-						close(p[1]);
+						dup2(p[WRITE_END], STDOUT_FILENO);
+						close(p[READ_END]);
+						close(p[WRITE_END]);
+					}
+					if (i > 0){ // un pipe est avant
+						printf("stdin pipe %s\n", cmd[0]);
+						dup2(p[READ_END], STDIN_FILENO);
+						close(p[WRITE_END]);
+						close(p[READ_END]);
 					}
 					/* les redirections */
 					if (i == 0 && (l->in)){ // première commande, elle reçoit input
@@ -203,18 +224,28 @@ int main() {
 				  break;
 				default: //le pere
 				  {
+						/* gestion du backgroud ? */
 						int status;
-				    printf("pere: commande %s lancée sur au pid %d\n", cmd[0], pid);
+				    printf("pere: commande %s lancée sur au pid %d", cmd[0], pid);
 						if (!l->bg){ // attendre la fin du fils
-							close(p[1]);
+							printf("\n");
+							close(p[WRITE_END]);
 							waitpid(pid, &status, 0);
 						}
 						else if (new_processus < N_PROCESSUS_MAX - 1){ // fils en arrière plan
+							printf(" en backgroud\n");
+							/* table des processus pour jobs */
 							proc_table[new_processus].pid = pid;
 							strcpy(proc_table[new_processus].commande, cmd[0]);
 							new_processus ++;
+
+							/* le traitant de terminaison */
+							traitant.sa_handler = bonjour;
+							sigemptyset ( & traitant.sa_mask );
+							traitant.sa_flags = 0 ;
+							if ( sigaction(SIGCHLD, &traitant, NULL) == -1 )
+								perror("erreur sigaction");
 						}
-						printf("pere: processus pid %d terminé\n", pid);
 				    break;
 				  }
 				}
