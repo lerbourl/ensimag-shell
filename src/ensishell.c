@@ -62,7 +62,6 @@ void interruption_handler(int sig)
 
 #if USE_GUILE == 1
 #include <libguile.h>
-
 int question6_executer(char *line)
 {
 	/* Question 6: Insert your code to execute the command line
@@ -70,17 +69,33 @@ int question6_executer(char *line)
 	 * parsecmd, then fork+execvp, for a single command.
 	 * pipe and i/o redirection are not required.
 	 */
+	 pid_t pid;
+	 struct cmdline *l;
 
-	if (! strncmp(line,"mkdir", 5)){
-		printf("c'est un mkdir\n" );
+	/* parsecmd free line and set it up to 0 */
+	l = parsecmd( & line);
+	char **cmd = l->seq[0];
+
+	switch( pid = fork() ) {
+	case -1:
+		perror("fork error");
+		break;
+	case 0: // le fils
+
+		/* la commande */
+		if (execvp(cmd[0], cmd) == -1){
+			printf("fils : Commande non reconnue\n");
+		};
+		break;
+	default: //le pere
+		{
+			int status;
+			printf("pere: commande %s lancée au pid %d\n", cmd[0], pid);
+			waitpid(pid, &status, 0);
+			printf("pere: processus pid %d terminé\n", pid);
+			break;
+		}
 	}
-
-
-	printf("Not implemented yet: can not execute %s\n", line);
-
-
-
-
 
 	/* Remove this line when using parsecmd as it will free it */
 	free(line);
