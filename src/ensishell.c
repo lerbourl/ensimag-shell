@@ -9,10 +9,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <signal.h>
+
 
 
 
@@ -23,9 +25,33 @@
 #error "Variante non défini !!"
 #endif
 
-void bonjour(int sig)
+#define N_PROCESSUS_MAX 255
+#define READ_END 0
+#define WRITE_END 1
+
+// structure de processus
+typedef struct processus_t{
+	pid_t pid;
+	char commande[50]; // hypothèse que les noms de commande ne dépassent pas 50 caractères
+  long int elapsed_time;
+} processus;
+
+processus proc_table[N_PROCESSUS_MAX];
+
+void interruption_handler(int sig)
 {
-  printf("J'ai recu le signal %d\n", sig);
+  int k;
+  pid_t endID;
+  struct timeval tp;
+  int status;
+  endID = waitpid(-1, &status, WNOHANG);
+  if (endID == -1 || endID == 0) printf("erreur pid handler\n");
+  else{
+    for(k = 0; proc_table[k].pid != endID; k++){}
+    gettimeofday(&tp, NULL);
+    printf("ARRET DE %s qui était à pid %d. Durée d'execution : %ld s\n",
+            proc_table[k].commande, proc_table[k].pid, tp.tv_sec - proc_table[k].elapsed_time);
+  }
 }
 
 /* Guile (1.8 and 2.0) is auto-detected by cmake */
@@ -36,10 +62,6 @@ void bonjour(int sig)
 
 #if USE_GUILE == 1
 #include <libguile.h>
-
-#define N_PROCESSUS_MAX 255
-#define READ_END 0
-#define WRITE_END 1
 
 int question6_executer(char *line)
 {
@@ -73,17 +95,11 @@ void terminate(char *line) {
 	printf("exit\n");
 	exit(0);
 }
-
-// structure de processus
-typedef struct processus_t{
-	int pid;
-	char commande[50]; // hypothèse que les noms de commande ne dépassent pas 50 caractères
-} processus;
 // début du terminal
 int main() {
-	processus proc_table[N_PROCESSUS_MAX];
 	int new_processus = 0;
 	struct sigaction traitant;
+  struct timeval tp = {0};
         printf("Variante %d: %s\n", VARIANTE, VARIANTE_STRING);
 
 #if USE_GUILE == 1
@@ -145,7 +161,7 @@ int main() {
 /*
 
 
-BONJOUR !
+UR !
 CERTAINS TESTS NE PASSENT PAS, ET POURTANT DANS LE SHELL LA SORTIE EST BONNE !!
 "ls -l" et "cat a.txt a.txt" par exemple...
 
@@ -170,7 +186,7 @@ CERTAINS TESTS NE PASSENT PAS, ET POURTANT DANS LE SHELL LA SORTIE EST BONNE !!
 				for(k = 0; k < new_processus; k++){
 					int stat_loc, endID;
 					close(p[WRITE_END]);
-					endID = waitpid(pid, &stat_loc, WNOHANG);
+					endID = waitpid(proc_table[k].pid, &stat_loc, WNOHANG);
 					if (endID == 0){
 						printf("processus %s pid %d ", proc_table[k].commande, proc_table[k].pid);
 						printf("is still running\n");
@@ -237,10 +253,12 @@ CERTAINS TESTS NE PASSENT PAS, ET POURTANT DANS LE SHELL LA SORTIE EST BONNE !!
 							/* table des processus pour jobs */
 							proc_table[new_processus].pid = pid;
 							strcpy(proc_table[new_processus].commande, cmd[0]);
+              gettimeofday(&tp, NULL);
+              proc_table[new_processus].elapsed_time = (long int)tp.tv_sec;
 							new_processus ++;
 
 							/* le traitant de terminaison */
-							traitant.sa_handler = bonjour;
+							traitant.sa_handler = interruption_handler;
 							sigemptyset ( & traitant.sa_mask );
 							traitant.sa_flags = 0 ;
 							if ( sigaction(SIGCHLD, &traitant, NULL) == -1 )
