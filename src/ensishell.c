@@ -70,7 +70,17 @@ int question6_executer(char *line)
 	 * parsecmd, then fork+execvp, for a single command.
 	 * pipe and i/o redirection are not required.
 	 */
+
+	if (! strncmp(line,"mkdir", 5)){
+		printf("c'est un mkdir\n" );
+	}
+
+
 	printf("Not implemented yet: can not execute %s\n", line);
+
+
+
+
 
 	/* Remove this line when using parsecmd as it will free it */
 	free(line);
@@ -180,8 +190,7 @@ CERTAINS TESTS NE PASSENT PAS, ET POURTANT DANS LE SHELL LA SORTIE EST BONNE !!
                         }
 			printf("\n");
 			// Commandes internes
-			if (!strcmp(cmd[0], "jobs")){ /* version très basique à base de tableau,
-																				mais qui sécurisée */
+			if (!strcmp(cmd[0], "jobs")){ /* version à base de tableau, mais qui est sécurisée */
 				printf("jobs:\n");
 				for(k = 0; k < new_processus; k++){
 					int stat_loc, endID;
